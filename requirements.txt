@@ -5,3 +5,4 @@ requests
 qdrant-client
 beautifulsoup4
 pypdf
+aiohttp
