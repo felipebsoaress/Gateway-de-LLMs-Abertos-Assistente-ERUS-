@@ -8,3 +8,7 @@ time=2026-11-23T01:17:05.971-03:00 level=INFO source=runner.go:405 msg="dropping
 time=2026-11-23T01:17:05.971-03:00 level=INFO source=types.go:50 msg="inference compute" id=cpu library=cpu compute="" name=cpu description=cpu libdirs=ollama driver="" pci_id="" type="" total="15.3 GiB" available="4.5 GiB"
 time=2026-11-23T01:17:05.971-03:00 level=INFO source=routes.go:2596 msg="vram-based default context" total_vram="0 B" default_num_ctx=4096
 time=2026-11-23T01:17:06.007-03:00 level=INFO source=model_recommendations.go:177 msg="model recommendations cache sleep scheduled" wait=4h6m33.255252415s consecutive_failures=0
+[GIN] 2026/11/23 - 09:46:02 | 404 |   9.24ms |       127.0.0.1 | POST     "/api/generate"
+[GIN] 2026/11/23 - 09:46:35 | 404 | 337.366µs |       127.0.0.1 | POST     "/api/generate"
+[GIN] 2026/11/23 - 09:49:11 | 404 | 323.647µs |       127.0.0.1 | POST     "/api/generate"
+[GIN] 2026/11/23 - 09:49:25 | 404 | 327.677µs |       127.0.0.1 | POST     "/api/generate"
