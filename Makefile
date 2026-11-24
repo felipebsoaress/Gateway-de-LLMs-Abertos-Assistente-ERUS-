@@ -20,10 +20,21 @@ start-bg:
 	@echo "🚀 Subindo banco Qdrant..."
 	docker run -d --name qdrant_erus -p 6333:6333 -p 6334:6334 qdrant/qdrant
 	@echo "🧠 Iniciando nós do Ollama em background..."
-	OLLAMA_HOST=127.0.0.1:11434 nohup ollama serve > ollama_no1.log 2>&1 &
-	OLLAMA_HOST=127.0.0.1:11435 nohup ollama serve > ollama_no2.log 2>&1 &
-	@echo "✅ Serviços rodando em background! Aguardando 3 segundos para estabilizar..."
+	@if ! ss -tln | grep -q ":11434 "; then \
+		OLLAMA_HOST=127.0.0.1:11434 nohup ollama serve > ollama_no1.log 2>&1 & \
+	else \
+		echo "ℹ️ Porta 11434 já está ativa (usando instância existente)."; \
+	fi
+	@if ! ss -tln | grep -q ":11435 "; then \
+		OLLAMA_HOST=127.0.0.1:11435 nohup ollama serve > ollama_no2.log 2>&1 & \
+	else \
+		echo "ℹ️ Porta 11435 já está ativa."; \
+	fi
+	@echo "⏳ Aguardando nós estabilizarem..."
 	sleep 3
+	@echo "📦 Garantindo modelo no Nó 2 (11435)..."
+	OLLAMA_HOST=127.0.0.1:11435 ollama pull qwen2.5-coder:1.5b
+	@echo "✅ Serviços prontos!"
 
 ingest:
 	@echo "📚 Iniciando ingestão de dados no Qdrant..."

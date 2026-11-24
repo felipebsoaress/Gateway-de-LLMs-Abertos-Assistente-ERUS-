@@ -3,10 +3,10 @@ import json
 import time
 import uuid
 
+import aiohttp
 from fastapi import FastAPI
 from fastapi.responses import StreamingResponse, PlainTextResponse
 from pydantic import BaseModel
-import requests
 import uvicorn
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, VectorParams, PointStruct
@@ -14,22 +14,23 @@ from qdrant_client.http.models import Distance, VectorParams, PointStruct
 # Inicializa a aplicação FastAPI que atua como gateway HTTP para os nós do Ollama
 app = FastAPI(title="Gateway de LLMs Abertos - Projeto ERUS")
 
-# Controle de concorrência: limita quantas gerações simultâneas podem rodar ao mesmo tempo
-LIMITE_CONCORRENCIA = 2
-semaforo = asyncio.Semaphore(LIMITE_CONCORRENCIA)
+# Limite de gerações simultâneas POR NÓ de inferência
+LIMITE_CONCORRENCIA_POR_NO = 2
 
-# Configuração da conexão com o banco vetorial Qdrant (usado para RAG e cache semântico)
+# Configuração da conexão com o banco vetorial Qdrant (RAG e cache semântico)
 QDRANT_URL = "localhost"
 NOME_CACHE = "cache_respostas"
 cliente_qdrant = QdrantClient(host=QDRANT_URL, port=6333)
 
 
-def configurar_cache():
+def configurar_cache(resetar: bool = False):
     """
-    Garante que a coleção usada para o cache semântico exista no Qdrant.
-    Os vetores têm dimensão 768 (compatível com o modelo 'nomic-embed-text')
-    e usam similaridade de cosseno (COSINE) para comparar perguntas.
+    Garante que a coleção de cache semântico exista no Qdrant.
+    Se resetar=True, recria a coleção vazia para experimentos controlados.
     """
+    if resetar and cliente_qdrant.collection_exists(NOME_CACHE):
+        cliente_qdrant.delete_collection(NOME_CACHE)
+
     if not cliente_qdrant.collection_exists(NOME_CACHE):
         cliente_qdrant.create_collection(
             collection_name=NOME_CACHE,
@@ -37,59 +38,69 @@ def configurar_cache():
         )
 
 
-# Executa a configuração inicial do cache ao carregar o módulo
 configurar_cache()
 
-# Tabela de roteamento por domínio:
-# Cada domínio define seu modelo gerador, prompt de sistema, coleção RAG no Qdrant
-# e os endpoints (nós do Ollama) responsáveis por geração e embeddings.
+# Tabela de roteamento por domínio
 DOMINIOS = {
     "erus-normas": {
         "modelo": "qwen2.5-coder:1.5b",
-        "sistema": "Você é o assistente da equipe ERUS. Responda de forma natural e direta, utilizando APENAS os dados fornecidos no texto de referência.",
+        "sistema": (
+            "Você é o assistente da equipe ERUS. Responda de forma natural e direta, "
+            "utilizando APENAS os dados fornecidos no texto de referência."
+        ),
         "colecao": "site_erus",
-        "url_geracao": "http://127.0.0.1:11434/api/generate",    # Nó 1 (Geração)
+        "url_geracao": "http://127.0.0.1:11434/api/generate",     # Nó 1 (Geração)
         "url_embedding": "http://127.0.0.1:11434/api/embeddings"  # Nó 1 (Embedding)
     },
     "erus-redes": {
         "modelo": "qwen2.5-coder:1.5b",
-        "sistema": "Você é o engenheiro de redes da equipe ERUS. Responda APENAS usando o texto de referência. Se a informação não estiver no texto, responda EXATAMENTE: 'Não encontrei essa informação no material da disciplina'.",
+        "sistema": (
+            "Você é o engenheiro de redes da equipe ERUS. Responda APENAS usando o texto "
+            "de referência. Se a informação não estiver no texto, responda EXATAMENTE: "
+            "'Não encontrei essa informação no material da disciplina'."
+        ),
         "colecao": "material_redes",
-        "url_geracao": "http://127.0.0.1:11434/api/generate",    # Nó 2 (Geração Distribuída)
+        "url_geracao": "http://127.0.0.1:11435/api/generate",     # Nó 2 (Geração Distribuída)
         "url_embedding": "http://127.0.0.1:11434/api/embeddings"  # Nó 1 (Embedding Centralizado)
     }
 }
 
+# Fila / semáforo independente para cada nó de geração configurado
+SEMAFOROS_POR_NO = {
+    cfg["url_geracao"]: asyncio.Semaphore(LIMITE_CONCORRENCIA_POR_NO)
+    for cfg in DOMINIOS.values()
+}
 
-# Esquema de validação do corpo JSON recebido no endpoint POST /perguntar
+
 class RequisicaoCliente(BaseModel):
     dominio: str
     pergunta: str
+    usar_cache: bool = True  # False permite medir carga pura do LLM sem cache hit
 
 
-def gerar_vetor(texto: str, url_embedding: str):
+async def gerar_vetor(texto: str, url_embedding: str) -> list[float]:
     """
-    Converte um texto (pergunta do usuário) em um vetor numérico (embedding)
-    consultando o modelo 'nomic-embed-text' no nó do Ollama informado.
+    Gera o embedding da pergunta de forma assíncrona via Ollama ('nomic-embed-text').
     """
     payload = {"model": "nomic-embed-text", "prompt": texto}
+    timeout = aiohttp.ClientTimeout(total=120)
     try:
-        resposta = requests.post(url_embedding, json=payload).json()
-        if "embedding" not in resposta:
-            print(f"\n❌ Erro interno do Ollama no embedding: {resposta}")
-            return []  # Retorna lista vazia para sinalizar falha sem derrubar o servidor
-        return resposta.get("embedding", [])
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(url_embedding, json=payload) as resp:
+                resposta = await resp.json()
+                if "embedding" not in resposta:
+                    print(f"\n❌ Erro interno do Ollama no embedding: {resposta}")
+                    return []
+                return resposta.get("embedding", [])
     except Exception as e:
         print(f"\n❌ Erro de conexão ao tentar gerar embedding: {e}")
         return []
 
 
 # ================= CACHE SEMÂNTICO =================
-def buscar_no_cache(vetor):
-    """
-    Procura no Qdrant uma pergunta já respondida com similaridade >= 0.95.
-    Se encontrar, retorna a resposta salva em cache; caso contrário, retorna None.
-    """
+def _buscar_no_cache_sync(vetor: list[float]):
+    if not vetor:
+        return None
     resultados = cliente_qdrant.query_points(
         collection_name=NOME_CACHE,
         query=vetor,
@@ -101,11 +112,9 @@ def buscar_no_cache(vetor):
     return None
 
 
-def salvar_no_cache(vetor, pergunta, resposta_completa):
-    """
-    Armazena o vetor da pergunta e o par (pergunta, resposta) na coleção de cache
-    do Qdrant usando um identificador UUID único.
-    """
+def _salvar_no_cache_sync(vetor: list[float], pergunta: str, resposta_completa: str):
+    if not vetor or not resposta_completa.strip():
+        return
     cliente_qdrant.upsert(
         collection_name=NOME_CACHE,
         points=[PointStruct(
@@ -117,12 +126,8 @@ def salvar_no_cache(vetor, pergunta, resposta_completa):
 
 
 # ================= RAG =================
-def buscar_no_banco(vetor_pergunta, nome_colecao):
-    """
-    Recupera os 3 trechos mais relevantes na coleção RAG do domínio informado
-    e os concatena em um único bloco de texto para servir de contexto ao LLM.
-    """
-    if not cliente_qdrant.collection_exists(nome_colecao):
+def _buscar_no_banco_sync(vetor_pergunta: list[float], nome_colecao: str) -> str:
+    if not vetor_pergunta or not cliente_qdrant.collection_exists(nome_colecao):
         return ""
     resultados = cliente_qdrant.query_points(
         collection_name=nome_colecao,
@@ -132,24 +137,30 @@ def buscar_no_banco(vetor_pergunta, nome_colecao):
     return "\n".join([r.payload.get("conteudo", "") for r in resultados])
 
 
-# ================= GERAÇÃO =================
-async def chamar_ollama_streaming(pergunta: str, config: dict, vetor_pergunta: list):
+# ================= GERAÇÃO EM STREAMING =================
+async def chamar_ollama_streaming(
+    pergunta: str,
+    config: dict,
+    vetor_pergunta: list[float],
+    usar_cache: bool,
+    inicio_requisicao: float,
+):
     """
-    Executa o fluxo de RAG + geração em streaming respeitando o semáforo de concorrência.
-    Envia cada token assim que chega do Ollama, registra métricas (TTFT, latência e vazão)
-    e salva a resposta completa no cache semântico ao final.
+    Respeita a fila (semáforo) específica do nó de destino, executa o RAG e
+    transmite os tokens via aiohttp sem bloquear o event loop do gateway.
     """
-    # Aguarda vaga no semáforo caso o limite de requisições simultâneas esteja ocupado
-    async with semaforo:
-        # 1. Busca o contexto relevante no Qdrant (etapa de Retrieval do RAG)
-        contexto = buscar_no_banco(vetor_pergunta, config["colecao"])
+    semaforo_no = SEMAFOROS_POR_NO[config["url_geracao"]]
+
+    async with semaforo_no:
+        espera_fila = time.perf_counter() - inicio_requisicao
+        contexto = await asyncio.to_thread(_buscar_no_banco_sync, vetor_pergunta, config["colecao"])
+
         prompt_enriquecido = (
             "Por favor, responda à pergunta do usuário usando as informações "
             f"do texto de referência abaixo.\n\nTexto de referência:\n{contexto}\n\n"
             f"Pergunta: {pergunta}"
         )
 
-        # 2. Monta a requisição de geração em modo streaming com baixa temperatura (mais factual)
         payload = {
             "model": config["modelo"],
             "prompt": prompt_enriquecido,
@@ -158,72 +169,87 @@ async def chamar_ollama_streaming(pergunta: str, config: dict, vetor_pergunta: l
             "options": {"temperature": 0.3}
         }
 
-        # Variáveis para instrumentação de desempenho da requisição
-        inicio = time.time()
+        inicio_geracao = time.perf_counter()
         primeiro_token = True
         tokens = 0
         resposta_completa = ""
+        timeout = aiohttp.ClientTimeout(total=600)
 
-        # Executa a abertura da conexão HTTP bloqueante fora do loop principal do asyncio
-        loop = asyncio.get_running_loop()
-        res = await loop.run_in_executor(
-            None,
-            lambda: requests.post(config["url_geracao"], json=payload, stream=True)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session.post(config["url_geracao"], json=payload) as res:
+                if res.status != 200:
+                    erro_txt = await res.text()
+                    print(f"\n❌ Erro HTTP {res.status} no nó {config['url_geracao']}: {erro_txt}")
+                    yield f"[Erro no nó de inferência: HTTP {res.status}]"
+                    return
+
+                async for linha in res.content:
+                    linha = linha.strip()
+                    if not linha:
+                        continue
+                    chunk = json.loads(linha.decode("utf-8"))
+                    token = chunk.get("response", "")
+                    if token:
+                        resposta_completa += token
+                        if primeiro_token:
+                            ttft_fim_a_fim = time.perf_counter() - inicio_requisicao
+                            ttft_no = time.perf_counter() - inicio_geracao
+                            print(
+                                f"\n📊 Nó={config['url_geracao']} | Fila={espera_fila:.3f}s | "
+                                f"TTFT(nó)={ttft_no:.3f}s | TTFT(total)={ttft_fim_a_fim:.3f}s"
+                            )
+                            primeiro_token = False
+
+                        tokens += 1
+                        yield token
+
+        if usar_cache:
+            await asyncio.to_thread(_salvar_no_cache_sync, vetor_pergunta, pergunta, resposta_completa)
+
+        tempo_geracao = max(time.perf_counter() - inicio_geracao, 1e-6)
+        tempo_total = max(time.perf_counter() - inicio_requisicao, 1e-6)
+        print(
+            f"📊 Latência total: {tempo_total:.3f}s | "
+            f"Vazão(nó): {tokens / tempo_geracao:.2f} tok/s | Tokens: {tokens}"
         )
 
-        # 3. Lê o stream linha a linha (cada linha é um objeto JSON retornado pelo Ollama)
-        for linha in res.iter_lines():
-            if linha:
-                chunk = json.loads(linha)
-                token = chunk.get("response", "")
-                if token:
-                    resposta_completa += token
 
-                    # Mede o TTFT (Time To First Token) na chegada do primeiro token válido
-                    if primeiro_token:
-                        ttft = time.time() - inicio
-                        print(f"\n📊 TTFT (LLM Gerador): {ttft:.4f}s")
-                        primeiro_token = False
-
-                    tokens += 1
-                    # Envia o token imediatamente ao cliente HTTP
-                    yield token
-
-        # 4. Persiste a resposta no cache semântico e imprime latência total e vazão
-        salvar_no_cache(vetor_pergunta, pergunta, resposta_completa)
-        tempo_total = time.time() - inicio
-        print(f"📊 Latência: {tempo_total:.4f}s | Vazão: {tokens / tempo_total:.2f} tok/s")
+@app.delete("/cache")
+async def rota_limpar_cache():
+    """Limpa a coleção de cache semântico para iniciar baterias de teste do zero."""
+    await asyncio.to_thread(configurar_cache, True)
+    print("\n🧹 Cache semântico limpo com sucesso.")
+    return {"status": "cache_limpo"}
 
 
 @app.post("/perguntar")
 async def rota_perguntar(req: RequisicaoCliente):
-    """
-    Endpoint principal do gateway.
-    Valida o domínio, gera o embedding da pergunta, verifica o cache semântico e,
-    em caso de cache miss, encaminha a geração em streaming para o nó correspondente.
-    """
+    inicio_requisicao = time.perf_counter()
     dominio = req.dominio.lower()
     if dominio not in DOMINIOS:
         return {"erro": "Domínio inválido. Use 'erus-normas' ou 'erus-redes'."}
 
-    # Seleciona as configurações (modelo, coleção e URLs) correspondentes ao domínio
     config = DOMINIOS[dominio]
-    vetor_pergunta = gerar_vetor(req.pergunta, config["url_embedding"])
+    vetor_pergunta = await gerar_vetor(req.pergunta, config["url_embedding"])
 
-    # Verifica se já existe uma resposta suficientemente semelhante no cache semântico
-    resposta_cache = buscar_no_cache(vetor_pergunta)
-    if resposta_cache:
-        print("\n⚡ CACHE HIT: Pergunta similar encontrada!")
-        print(f"📊 TTFT (Cache): 0.00s | GPU não utilizada.")
-        return PlainTextResponse(f"[Cache Rápido] {resposta_cache}")
+    if req.usar_cache:
+        resposta_cache = await asyncio.to_thread(_buscar_no_cache_sync, vetor_pergunta)
+        if resposta_cache:
+            latencia_cache = time.perf_counter() - inicio_requisicao
+            print(f"\n⚡ CACHE HIT! Latência (embedding + busca): {latencia_cache:.4f}s")
+            return PlainTextResponse(f"[Cache Rápido] {resposta_cache}")
 
-    # Em caso de cache miss, retorna um fluxo contínuo com os tokens gerados pelo Ollama
     return StreamingResponse(
-        chamar_ollama_streaming(req.pergunta, config, vetor_pergunta),
+        chamar_ollama_streaming(
+            req.pergunta,
+            config,
+            vetor_pergunta,
+            req.usar_cache,
+            inicio_requisicao,
+        ),
         media_type="text/event-stream"
     )
 
 
 if __name__ == "__main__":
-    # Sobe o servidor Uvicorn escutando em todas as interfaces de rede na porta 8080
     uvicorn.run(app, host="0.0.0.0", port=8080)
