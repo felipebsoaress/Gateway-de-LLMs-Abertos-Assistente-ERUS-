@@ -1,0 +1,22 @@
+[
+  {"id": 1, "categoria": "sobre", "pergunta": "Qual é o objetivo principal da equipe ERUS na UFES?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/sobre/"},
+  {"id": 2, "categoria": "sobre", "pergunta": "Como a ERUS se caracteriza em relação ao ensino, pesquisa ou extensão?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/sobre/"},
+  {"id": 3, "categoria": "sobre", "pergunta": "Quais áreas ou cursos se conectam às atividades da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/sobre/"},
+  {"id": 4, "categoria": "sobre", "pergunta": "Onde a equipe ERUS está sediada ou vinculada?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/"},
+  {"id": 5, "categoria": "sobre", "pergunta": "Qual é a visão ou propósito geral apresentado na página inicial da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/"},
+  {"id": 6, "categoria": "projetos", "pergunta": "Quais são os principais projetos listados no site da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/projetos/"},
+  {"id": 7, "categoria": "projetos", "pergunta": "Descreva brevemente um dos projetos desenvolvidos pela equipe.", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/projetos/"},
+  {"id": 8, "categoria": "projetos", "pergunta": "Quais tecnologias, plataformas ou objetivos específicos aparecem nos projetos da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/projetos/"},
+  {"id": 9, "categoria": "projetos", "pergunta": "Existem projetos voltados a competições ou aplicações práticas na ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/projetos/"},
+  {"id": 10, "categoria": "projetos", "pergunta": "Como os projetos da ERUS se relacionam com a formação dos integrantes?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/projetos/"},
+  {"id": 11, "categoria": "membros", "pergunta": "Como a equipe de membros da ERUS é organizada?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/membros/"},
+  {"id": 12, "categoria": "membros", "pergunta": "Quem são ou quais cargos/funções aparecem na seção de membros da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/membros/"},
+  {"id": 13, "categoria": "membros", "pergunta": "Há coordenação docente ou orientação mencionada para a equipe?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/membros/"},
+  {"id": 14, "categoria": "membros", "pergunta": "Como os estudantes participam ou ingressam segundo as informações da equipe?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/sobre/"},
+  {"id": 15, "categoria": "membros", "pergunta": "Quais frentes ou subequipes são citadas entre os membros?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/membros/"},
+  {"id": 16, "categoria": "conquistas", "pergunta": "Quais conquistas, premiações ou participações relevantes a ERUS registra?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/conquistas/"},
+  {"id": 17, "categoria": "conquistas", "pergunta": "Em quais eventos ou competições a equipe se destacou segundo o site?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/conquistas/"},
+  {"id": 18, "categoria": "conquistas", "pergunta": "Qual é um marco histórico importante mencionado nas conquistas da ERUS?", "resposta_esperada": "", "fonte_esperada": "https://www.erus.ufes.br/conquistas/"},
+  {"id": 19, "categoria": "fora_do_escopo", "pergunta": "Qual é o orçamento anual exato da ERUS em reais?", "resposta_esperada": "Informação não disponível no material de referência.", "fonte_esperada": "N/A"},
+  {"id": 20, "categoria": "fora_do_escopo", "pergunta": "Qual é o cronograma de reuniões internas da próxima semana?", "resposta_esperada": "Informação não disponível no material de referência.", "fonte_esperada": "N/A"}
+]
