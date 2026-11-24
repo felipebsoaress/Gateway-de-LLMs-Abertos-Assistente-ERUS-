@@ -1,6 +1,6 @@
 # Gateway de LLMs Abertos - Assistente ERUS
 
-Este repositório contém a implementação do **Projeto 1 da disciplina de Redes de Computadores (UFES)**, estendido para servir como um assistente de Inteligência Artificial focado na **Equipe de Robótica da UFES (ERUS)**. 
+Este repositório contém a implementação do **Projeto da disciplina de Redes de Computadores (UFES)**, estendido para servir como um assistente de Inteligência Artificial focado na **Equipe de Robótica da UFES (ERUS)**. 
 
 ## 🎯 Intuito do Projeto
 O objetivo central é aplicar conceitos práticos de redes (filas, roteamento, balanceamento, streaming e cache) no contexto de serviços de Inteligência Artificial local. O sistema fornece respostas sobre o material da disciplina de Redes e sobre as informações da equipe ERUS, rodando modelos de pesos abertos de forma independente, garantindo privacidade, baixa latência e total soberania dos dados.
