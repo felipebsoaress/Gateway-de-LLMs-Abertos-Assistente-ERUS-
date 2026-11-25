@@ -51,6 +51,7 @@ make ingest
 make run
 ```
 *Inicia o servidor FastAPI. O assistente ficará disponível e ouvindo requisições na porta 8080.*
+http://localhost:8080/docs
 
 ### Interrompendo a Execução
 Para limpar os processos locais do Ollama e parar o container do banco de dados, execute:
